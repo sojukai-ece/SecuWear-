@@ -1,0 +1,184 @@
+"use client"
+import { useState, useEffect } from "react"
+import { ShieldAlert, Users, Clock, AlertTriangle, Navigation, LogOut, CheckCircle } from "lucide-react"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card"
+import { Button } from "@/components/ui/Button"
+import MapVisualizer from "@/components/MapVisualizer"
+import { findShortestPath, luzonGraph, Node } from "@/lib/dijkstra"
+import { ThemeToggle } from "@/components/ThemeToggle"
+import { supabase } from "@/lib/supabaseClient"
+import { useRouter } from "next/navigation"
+
+export default function AuthorityDashboard() {
+  const router = useRouter();
+  const [activeAlert, setActiveAlert] = useState<{ user: string, location: Node, status: string } | null>(null);
+  const [dispatchLocation] = useState<Node>("Quezon City");
+  const [pathResult, setPathResult] = useState<{ path: Node[], distance: number } | null>(null);
+  const [authorityEmail, setAuthorityEmail] = useState<string | null>(null);
+
+  useEffect(() => {
+    const checkUser = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) {
+        router.replace('/login');
+      } else {
+        setAuthorityEmail(session.user.email || "Dispatcher");
+      }
+    };
+    checkUser();
+  }, [router]);
+
+  useEffect(() => {
+    // Simulate receiving an SOS
+    const timer = setTimeout(() => {
+      setActiveAlert({
+        user: "Emergency Signal Detected",
+        location: "Makati",
+        status: "Critical - Immediate Response Required"
+      });
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    router.replace('/login');
+  };
+
+  const handleDispatch = () => {
+    if (activeAlert) {
+      const result = findShortestPath(luzonGraph, dispatchLocation, activeAlert.location);
+      setPathResult(result);
+    }
+  };
+
+  return (
+    <div className="min-h-screen p-6 sm:p-12 z-10 flex flex-col bg-background relative overflow-hidden transition-colors">
+      <div className="absolute top-[-20%] right-[-10%] w-[50%] h-[50%] bg-danger-glow rounded-full blur-[150px] pointer-events-none" />
+      
+      <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-10 relative z-10 gap-6">
+        <div>
+          <h1 className="text-4xl font-black font-heading flex items-center gap-4 text-danger">
+            <ShieldAlert className="w-10 h-10" />
+            Command Center
+          </h1>
+          <p className="text-gray-500 font-medium mt-2">
+            Luzon Metro Sector • Auth: <span className="mono-text">{authorityEmail || "Loading..."}</span>
+          </p>
+        </div>
+        <div className="flex items-center gap-4">
+          <div className="hidden sm:flex items-center gap-2 glass border-primary/30 px-5 py-2.5 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(37,99,235,0.2)]">
+            <Users className="w-5 h-5 text-primary" />
+            <span>Active Units: <span className="mono-text">24</span></span>
+          </div>
+          <div className="hidden sm:flex items-center gap-2 glass border-green-500/30 px-5 py-2.5 rounded-full text-sm font-bold shadow-[0_0_15px_rgba(34,197,94,0.2)]">
+            <Clock className="w-5 h-5 text-green-500" />
+            <span>Avg Response: <span className="mono-text">4.2m</span></span>
+          </div>
+          <ThemeToggle />
+          <Button variant="danger" size="icon" className="rounded-full" onClick={handleLogout}>
+            <LogOut className="w-5 h-5" />
+          </Button>
+        </div>
+      </header>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 flex-1 relative z-10">
+        <div className="space-y-6">
+          <Card className={activeAlert && !pathResult ? "border-danger ring-2 ring-danger shadow-[0_0_30px_rgba(239,68,68,0.3)] transition-all duration-300 scale-[1.02]" : "transition-all duration-300"}>
+            <CardHeader className="pb-4 border-b border-glass-border">
+              <CardTitle className="flex justify-between items-center text-xl font-heading">
+                Incoming Alerts
+                {activeAlert && !pathResult && <span className="w-4 h-4 rounded-full bg-danger animate-ping absolute top-6 right-6" />}
+                {activeAlert && !pathResult && <span className="w-4 h-4 rounded-full bg-danger absolute top-6 right-6" />}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              {activeAlert ? (
+                <div className="p-6 space-y-6">
+                  <div className="flex items-start gap-4">
+                    <div className="p-4 rounded-2xl bg-danger/20 text-danger shadow-inner">
+                      <AlertTriangle className="w-8 h-8 animate-pulse" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xl font-heading text-foreground">{activeAlert.user}</h4>
+                      <p className="text-gray-500 font-medium mt-1">Location: <span className="text-foreground font-bold">{activeAlert.location}</span></p>
+                      <p className="text-danger font-bold text-sm mt-2 bg-danger/10 py-1 px-3 rounded-full inline-block">{activeAlert.status}</p>
+                    </div>
+                  </div>
+                  
+                  {!pathResult ? (
+                    <Button variant="danger" className="w-full h-14 text-lg font-bold shadow-lg shadow-danger/20 hover:shadow-danger/40 transition-all" onClick={handleDispatch}>
+                      <Navigation className="w-5 h-5 mr-2" />
+                      Calculate Route & Dispatch
+                    </Button>
+                  ) : (
+                    <div className="bg-primary/10 border-2 border-primary/30 p-5 rounded-2xl relative overflow-hidden">
+                      <div className="absolute inset-0 bg-primary/5 animate-pulse" />
+                      <p className="text-primary font-black text-lg mb-2 relative z-10 flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5" /> Unit Dispatched!
+                      </p>
+                      <p className="text-sm font-medium relative z-10 text-gray-400">
+                        Estimated Distance: <span className="font-mono text-white bg-black/40 px-2 py-1 rounded">{pathResult.distance} units</span>
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="p-16 text-center text-gray-500 flex flex-col items-center justify-center">
+                  <ShieldAlert className="w-12 h-12 mb-4 opacity-20" />
+                  <p className="font-medium">No active emergencies in your sector.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {pathResult && (
+            <Card className="border-primary/30 shadow-[0_0_20px_rgba(37,99,235,0.1)]">
+              <CardHeader>
+                <CardTitle className="text-xl font-heading text-primary flex items-center gap-2">
+                  <Navigation className="w-5 h-5" /> Route Details
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {pathResult.path.map((node, index) => (
+                    <div key={index} className="flex items-center gap-4 p-3 rounded-xl hover:bg-white/5 transition-colors">
+                      <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black font-heading shadow-inner ${
+                        index === 0 ? "bg-primary text-white" :
+                        index === pathResult.path.length - 1 ? "bg-danger text-white" :
+                        "bg-glass border border-glass-border text-gray-400"
+                      }`}>
+                        {index + 1}
+                      </div>
+                      <span className={`text-lg font-bold ${index === pathResult.path.length - 1 ? "text-danger" : "text-foreground"}`}>
+                        {node}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
+
+        <div className="lg:col-span-2">
+          <Card className="h-full flex flex-col overflow-hidden">
+            <CardHeader className="pb-4 border-b border-glass-border">
+              <CardTitle className="flex justify-between items-center font-heading">
+                <span className="text-2xl">Live Operations Map</span>
+                <span className="text-sm font-bold bg-glass px-3 py-1 rounded-full text-primary border border-primary/20">Dijkstra Routing</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex-1 p-0">
+              <MapVisualizer 
+                path={pathResult?.path || []} 
+                startNode={activeAlert?.location}
+                endNode={dispatchLocation}
+              />
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  );
+}
